@@ -13,6 +13,8 @@ Prototype d'assistant intelligent de voyage combinant:
 - Comparer une approche de base (popularite) vs personnalisee
 - Evaluer la qualite via des metriques de ranking
 
+  
+
 Resultat attendu: une liste ordonnee de destinations recommandees par utilisateur.
 
 ### Module de planification (TravelPlanner)
@@ -87,3 +89,13 @@ cd frontend
 npm install
 npm run dev
 ```
+Lien Dataset : 
+- IntTravel
+https://huggingface.co/datasets/GD-ML/IntTravel_dataset
+- TravelPlanner
+https://huggingface.co/datasets/osunlp/TravelPlanner/viewer/test/test?p=1&row=187
+
+### Team :
+Molka Cherni
+Sarra Touati 
+Alaa Eddine Zamouri
