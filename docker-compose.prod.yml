@@ -1,0 +1,20 @@
+services:
+  postgres:
+    restart: unless-stopped
+
+  pgadmin:
+    restart: unless-stopped
+
+  mlflow:
+    restart: unless-stopped
+
+  bootstrap:
+    restart: "no"
+
+  backend:
+    restart: unless-stopped
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+
+  frontend:
+    restart: unless-stopped

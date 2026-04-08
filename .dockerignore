@@ -1,0 +1,8 @@
+.git
+.venv
+backend/__pycache__
+backend/tests/__pycache__
+frontend/node_modules
+frontend/dist
+dataset/interaction_5.csv
+*.pyc

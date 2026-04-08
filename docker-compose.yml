@@ -1,0 +1,156 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-travel_ml}
+      POSTGRES_USER: ${POSTGRES_USER:-travel_ml}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-travel_ml}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-travel_ml} -d ${POSTGRES_DB:-travel_ml}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:8.12
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-travel_ml}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-travel_ml}
+      MLFLOW_POSTGRES_DB: ${MLFLOW_POSTGRES_DB:-mlflow_tracking}
+      MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI:-postgresql+psycopg2://travel_ml:travel_ml@postgres:5432/mlflow_tracking}
+      MLFLOW_ARTIFACT_ROOT: ${MLFLOW_ARTIFACT_ROOT:-file:///mlflow/artifacts}
+      GIT_PYTHON_REFRESH: quiet
+    command:
+      [
+        "sh",
+        "-c",
+        "python - <<'PY'\nimport os\nimport psycopg\n\ndb_name = os.environ['MLFLOW_POSTGRES_DB']\nconn = psycopg.connect(\n    host='postgres',\n    port=5432,\n    dbname='postgres',\n    user=os.environ['POSTGRES_USER'],\n    password=os.environ['POSTGRES_PASSWORD'],\n    autocommit=True,\n)\nwith conn.cursor() as cur:\n    cur.execute('SELECT 1 FROM pg_database WHERE datname = %s', (db_name,))\n    if cur.fetchone() is None:\n        cur.execute(f'CREATE DATABASE \"{db_name}\"')\nconn.close()\nPY\nmlflow server --host 0.0.0.0 --port 5000 --backend-store-uri \"$${MLFLOW_BACKEND_STORE_URI}\" --default-artifact-root \"$${MLFLOW_ARTIFACT_ROOT}\"",
+      ]
+    ports:
+      - "5001:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://travel_ml:travel_ml@postgres:5432/travel_ml}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      INTERACTION_DATA_PATH: ${INTERACTION_DATA_PATH:-/app/dataset/interaction_5.csv}
+      TRIP_DATA_DIR: ${TRIP_DATA_DIR:-/external-trip-data}
+      MODEL_ARTIFACT_PATH: ${MODEL_ARTIFACT_PATH:-/app/backend/artifacts/poi_recommender.joblib}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      INTERACTION_SAMPLE_ROWS: ${INTERACTION_SAMPLE_ROWS:-250000}
+      TRAINING_TOP_N: ${TRAINING_TOP_N:-50}
+      CANDIDATE_POOL_SIZE: ${CANDIDATE_POOL_SIZE:-100}
+      BOOTSTRAP_FORCE: ${BOOTSTRAP_FORCE:-false}
+      MLFLOW_ENABLED: ${MLFLOW_ENABLED:-true}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-travel-ml-recommender}
+      MLFLOW_UI_URL: ${MLFLOW_UI_URL:-http://localhost:5001}
+      MLFLOW_ARTIFACT_ROOT: ${MLFLOW_ARTIFACT_ROOT:-file:///mlflow/artifacts}
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-poi_recommender}
+      MLFLOW_REGISTER_MODEL: ${MLFLOW_REGISTER_MODEL:-true}
+      MLFLOW_REGISTERED_MODEL_NAME: ${MLFLOW_REGISTERED_MODEL_NAME:-poi_recommender}
+      MLFLOW_LATEST_ALIAS: ${MLFLOW_LATEST_ALIAS:-candidate}
+      MLFLOW_CHAMPION_ALIAS: ${MLFLOW_CHAMPION_ALIAS:-champion}
+      MLFLOW_REGISTRATION_WAIT_SECONDS: ${MLFLOW_REGISTRATION_WAIT_SECONDS:-120}
+      MLFLOW_CONNECTION_RETRIES: ${MLFLOW_CONNECTION_RETRIES:-6}
+      MLFLOW_CONNECTION_RETRY_DELAY_SECONDS: ${MLFLOW_CONNECTION_RETRY_DELAY_SECONDS:-2}
+      GIT_PYTHON_REFRESH: quiet
+    command: ["python", "-m", "app.scripts.bootstrap"]
+    volumes:
+      - ./dataset:/app/dataset:ro
+      - ../projet ml:/external-trip-data:ro
+      - ml_artifacts:/app/backend/artifacts
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://travel_ml:travel_ml@postgres:5432/travel_ml}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.1-8b-instant}
+      INTERACTION_DATA_PATH: ${INTERACTION_DATA_PATH:-/app/dataset/interaction_5.csv}
+      TRIP_DATA_DIR: ${TRIP_DATA_DIR:-/external-trip-data}
+      MODEL_ARTIFACT_PATH: ${MODEL_ARTIFACT_PATH:-/app/backend/artifacts/poi_recommender.joblib}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      INTERACTION_SAMPLE_ROWS: ${INTERACTION_SAMPLE_ROWS:-250000}
+      TRAINING_TOP_N: ${TRAINING_TOP_N:-50}
+      CANDIDATE_POOL_SIZE: ${CANDIDATE_POOL_SIZE:-100}
+      MLFLOW_ENABLED: ${MLFLOW_ENABLED:-true}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-travel-ml-recommender}
+      MLFLOW_UI_URL: ${MLFLOW_UI_URL:-http://localhost:5001}
+      MLFLOW_ARTIFACT_ROOT: ${MLFLOW_ARTIFACT_ROOT:-file:///mlflow/artifacts}
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-poi_recommender}
+      MLFLOW_REGISTER_MODEL: ${MLFLOW_REGISTER_MODEL:-true}
+      MLFLOW_REGISTERED_MODEL_NAME: ${MLFLOW_REGISTERED_MODEL_NAME:-poi_recommender}
+      MLFLOW_LATEST_ALIAS: ${MLFLOW_LATEST_ALIAS:-candidate}
+      MLFLOW_CHAMPION_ALIAS: ${MLFLOW_CHAMPION_ALIAS:-champion}
+      MLFLOW_REGISTRATION_WAIT_SECONDS: ${MLFLOW_REGISTRATION_WAIT_SECONDS:-120}
+      MLFLOW_CONNECTION_RETRIES: ${MLFLOW_CONNECTION_RETRIES:-6}
+      MLFLOW_CONNECTION_RETRY_DELAY_SECONDS: ${MLFLOW_CONNECTION_RETRY_DELAY_SECONDS:-2}
+      GIT_PYTHON_REFRESH: quiet
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./dataset:/app/dataset:ro
+      - ../projet ml:/external-trip-data:ro
+      - ml_artifacts:/app/backend/artifacts
+      - mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+      bootstrap:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  pgadmin_data:
+  ml_artifacts:
+  mlflow_artifacts:
